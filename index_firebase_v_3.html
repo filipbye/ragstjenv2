@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Oppdragstjenesten V3 - Firebase</title>
+<meta name="description" content="Mobil-først Oppdragstjeneste med Firebase" />
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<!-- Leaflet for kart -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+:root{--bg:#f6fbf9;--card:#ffffff;--accent:#63b3a2;--muted:#6b7280;--accent-2:#8bd3c4}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:var(--bg); color:#0f172a}
+header{display:flex;align-items:center;gap:12px;padding:12px;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white}
+.menu-btn{background:transparent;border:none;color:white;font-size:22px}
+.brand{font-weight:700;font-size:18px}
+.wrap{display:grid;grid-template-columns:1fr;gap:10px;padding:14px}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;background:var(--card);box-shadow:2px 0 10px rgba(15,23,42,0.08);transform:translateX(-110%);transition:transform .22s ease;padding:18px}
+.sidebar.open{transform:translateX(0)}
+.sidebar h3{margin:0 0 12px}
+.nav a{display:flex;gap:10px;align-items:center;padding:10px;border-radius:8px;color:#0f172a;text-decoration:none}
+.nav a:hover{background:#f0fff8}
+.card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(3,7,18,0.04);}
+input,textarea,select,button{font-family:inherit}
+input,textarea,select{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef0;background:transparent}
+textarea{min-height:100px}
+.btn{background:var(--accent);color:white;padding:10px 12px;border-radius:8px;border:none;cursor:pointer}
+.btn.secondary{background:#eef8f6;color:var(--accent)}
+.task{padding:10px;border-radius:10px;margin-bottom:10px;border:1px solid #eef4f2;background:#fff}
+.task h4{margin:0 0 6px}
+.meta{font-size:13px;color:var(--muted)}
+.flex{display:flex;gap:8px}
+.avatar{width:72px;height:72px;border-radius:12px;object-fit:cover}
+.chat{display:flex;flex-direction:column;height:60vh}
+.messages{flex:1;overflow:auto;padding:8px}
+.message{margin:6px 0;max-width:80%}
+.me{align-self:flex-end;background:#dcfce7;padding:8px;border-radius:10px}
+.them{align-self:flex-start;background:#fff;padding:8px;border-radius:10px}
+@media(min-width:760px){.wrap{max-width:900px;margin:14px auto}}
+</style>
+</head>
+<body>
+<header>
+<button class="menu-btn" id="menuBtn">☰</button>
+<div class="brand">Oppdragstjenesten</div>
+</header>
+
+<nav class="sidebar" id="sidebar">
+<h3>Oppdragstjenesten</h3>
+<div class="nav">
+<a href="#home" data-route="home">🏠 Hjem</a>
+<a href="#profile" data-route="profile">👤 Profil</a>
+<a href="#search" data-route="search">🔎 Søk oppdrag</a>
+<a href="#create" data-route="create">➕ Legg ut oppdrag</a>
+<a href="#chat" data-route="chat">💬 Meldinger</a>
+<a href="#about" data-route="about">ℹ️ Om oss</a>
+<hr>
+<div id="authArea"></div>
+</div>
+</nav>
+
+<main class="wrap" id="app">
+<section id="home" class="card page">
+<h2>Velkommen!</h2>
+<p>Oppdragstjenesten er laget for å hjelpe mennesker som trenger hjelp med ting hjemme. Eks rydde, klippe plenen, handle i butikken. Dette er for deg som har lyst til å hjelpe andre.</p>
+<div style="margin-top:12px" class="flex">
+<button class="btn" id="toSearch">Søk oppdrag</button>
+<button class="btn secondary" id="toCreate">Legg ut oppdrag</button>
+</div>
+<h3 style="margin-top:14px">Nye oppdrag nær deg</h3>
+<div id="feed"></div>
+</section>
+
+<section id="profile" class="card page" style="display:none">
+<h2>Min profil</h2>
+<div style="display:flex;gap:12px;align-items:center">
+<img id="avatarPreview" class="avatar" src="" alt="avatar" />
+<div style="flex:1">
+<input id="displayName" placeholder="Ditt navn" />
+<div class="meta">E-post: <span id="profileEmail"></span></div>
+<div style="margin-top:8px"><button class="btn" id="saveProfile">Lagre profil</button></div>
+</div>
+</div>
+<div style="margin-top:12px">
+<label>Last opp profilbilde (valgfritt)</label>
+<input type="file" id="avatarInput" accept="image/*" />
+</div>
+<h3 style="margin-top:12px">Din rating</h3>
+<div id="ratingArea">Ingen vurderinger enda</div>
+</section>
+
+<section id="search" class="card page" style="display:none">
+<h2>Søk oppdrag</h2>
+<input id="searchInput" placeholder="Søk etter tittel eller sted" />
+<div style="margin-top:10px" id="searchResults"></div>
+<h4 style="margin-top:12px">Kart</h4>
+<div id="map" style="height:240px;border-radius:8px;overflow:hidden"></div>
+</section>
+
+<section id="create" class="card page" style="display:none">
+<h2>Legg ut oppdrag</h2>
+<input id="taskTitle" placeholder="Tittel (f.eks. Handle)" />
+<input id="taskPrice" placeholder="Pris (kr)" type="number" />
+<textarea id="taskDesc" placeholder="Beskrivelse"></textarea>
+<input id="taskLocation" placeholder="Stedsnavn eller adresse (valgfritt)" />
+<div style="margin-top:8px"><button class="btn" id="publishTask">Publiser oppdrag</button></div>
+</section>
+
+<section id="chat" class="card page" style="display:none">
+<h2>Meldinger</h2>
+<div class="chat">
+<div class="messages" id="messages"></div>
+<div style="display:flex;gap:8px;margin-top:8px">
+<input id="msgInput" placeholder="Skriv melding..." />
+<button class="btn" id="sendMsg">Send</button>
+</div>
+</div>
+</section>
+
+<section id="about" class="card page" style="display:none">
+<h2>Om Oppdragstjenesten</h2>
+<p>Oppdragstjenesten er laget for å hjelpe mennesker som trenger hjelp med ting hjemme. Eks rydde, klippe plenen, handle i butikken. Dette er for deg som har lyst til å hjelpe andre.</p>
+</section>
+</main>
+
+<script>
+// ===== Firebase setup =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDetAoUeCO8DfraAHMihUJlGJupTvUwu68",
+  authDomain: "oppdragstjenesten-54329.firebaseapp.com",
+  projectId: "oppdragstjenesten-54329",
+  storageBucket: "oppdragstjenesten-54329.firebasestorage.app",
+  messagingSenderId: "1026577707287",
+  appId: "1:1026577707287:web:d868ab7265100682840752",
+  measurementId: "G-3XNQL7S9GR"
+};
+const app = firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let currentUser = null;
+
+// ===== Sidebar navigation =====
+const SIDEBAR = document.getElementById('sidebar');
+const menuBtn = document.getElementById('menuBtn');
+const pages = document.querySelectorAll('.page');
+const navLinks = document.querySelectorAll('.nav a');
+function show(route){ pages.forEach(p=>p.style.display='none'); const el=document.getElementById(route); if(el) el.style.display='block'; SIDEBAR.classList.remove('open'); }
+menuBtn.addEventListener('click', ()=>SIDEBAR.classList.toggle('open'));
+navLinks.forEach(a=>a.addEventListener('click',(e)=>{e.preventDefault();show(a.dataset.route)}));
+document.getElementById('toSearch').addEventListener('click',()=>show('search'));
+document.getElementById('toCreate').addEventListener('click
